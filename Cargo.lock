@@ -3636,6 +3636,7 @@ dependencies = [
  "socket2",
  "wtx",
  "zenoh-nostd",
+ "zenoh-proto",
 ]
 
 [[package]]

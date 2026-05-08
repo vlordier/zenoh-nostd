@@ -7,6 +7,7 @@ use wtx::{
 };
 use zenoh_nostd::platform::*;
 
+pub mod discovery;
 mod mcast;
 mod tcp;
 mod udp;
