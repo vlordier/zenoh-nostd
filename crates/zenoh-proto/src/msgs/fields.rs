@@ -12,7 +12,7 @@ pub enum Reliability {
 }
 
 #[repr(u8)]
-#[derive(Debug, Default, PartialEq)]
+#[derive(ZRU8, Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Priority {
     Control = 0,
     RealTime = 1,
