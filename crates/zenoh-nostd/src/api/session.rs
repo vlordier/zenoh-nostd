@@ -15,6 +15,7 @@ use crate::{
 mod run;
 
 pub mod get;
+pub mod liveliness;
 pub mod r#pub;
 pub mod put;
 pub mod querier;
