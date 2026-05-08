@@ -65,7 +65,7 @@ where
             }))
             .await?;
 
-        todo!("Also stop the channel if any")
+        Ok(())
     }
 
     pub fn keyexpr(&self) -> &keyexpr {

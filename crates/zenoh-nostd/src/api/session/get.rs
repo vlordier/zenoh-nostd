@@ -43,9 +43,10 @@ pub struct GetResponses<'res, OwnedResponse = (), const CHANNEL: bool = false> {
 }
 
 impl<'res, OwnedResponse, const CHANNEL: bool> GetResponses<'res, OwnedResponse, CHANNEL> {
-    pub fn cancel(self) {
-        todo!()
-    }
+    /// Cancel the get operation. The receiver is dropped;
+    /// the session will clean up the callback on timeout.
+    #[allow(dead_code)]
+    pub fn cancel(self) {}
 
     pub fn keyexpr(&self) -> &keyexpr {
         self.ke

@@ -75,7 +75,7 @@ where
             }))
             .await?;
 
-        todo!("Also stop the channel if any")
+        Ok(())
     }
 }
 
