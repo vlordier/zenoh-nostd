@@ -366,7 +366,10 @@ fn transport_builder_peer_initsyn_has_peer_whatami() {
 }
 
 #[test]
-fn transport_peer_simultaneous_connect_equal_zid_errors() {
+fn transport_peer_simultaneous_connect_equal_zid_drops_connection() {
+    // Equal ZIDs during simultaneous open are ambiguous (cannot determine which
+    // side should yield). The state machine logs InvalidAttribute and returns
+    // (None, None), signalling the caller to drop the connection.
     let zid = ZenohIdProto::default();
 
     let mut a = State::WaitingInitAck {

@@ -178,8 +178,14 @@ impl State {
                             syn.identifier.zid
                         );
 
+                        // Lower-ZID side wins: continue as the initiator.
+                        // Return (None, None) so the caller stops sending and
+                        // waits for the peer's InitAck instead.
                         (None, None)
                     } else {
+                        // Equal ZIDs are invalid (would create a self-loop).
+                        // Log the error and signal the caller to drop the
+                        // connection by returning (None, None).
                         zenoh_proto::zbail!(@ret (None, None), TransportError::InvalidAttribute)
                     }
                     } else {
