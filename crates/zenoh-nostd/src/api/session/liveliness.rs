@@ -5,7 +5,7 @@ use crate::{
     config::ZSessionConfig,
 };
 
-/// Liveliness token: publishes periodic heartbeats on a key expression.
+/// Liveliness token: allows manually sending heartbeat puts on a key expression.
 pub struct LivelinessToken<'a, 'res, Config>
 where
     Config: ZSessionConfig,
@@ -18,7 +18,7 @@ impl<'a, 'res, Config> LivelinessToken<'a, 'res, Config>
 where
     Config: ZSessionConfig,
 {
-    pub fn new(session: &'a Session<'res, Config>, ke: &'a zenoh_proto::keyexpr) -> Self {
+    pub(crate) fn new(session: &'a Session<'res, Config>, ke: &'a zenoh_proto::keyexpr) -> Self {
         Self { session, ke }
     }
 
