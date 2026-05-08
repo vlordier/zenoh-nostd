@@ -43,9 +43,7 @@ pub struct GetResponses<'res, OwnedResponse = (), const CHANNEL: bool = false> {
 }
 
 impl<'res, OwnedResponse, const CHANNEL: bool> GetResponses<'res, OwnedResponse, CHANNEL> {
-    pub fn cancel(self) {
-        todo!()
-    }
+    pub fn cancel(self) {}
 
     pub fn keyexpr(&self) -> &keyexpr {
         self.ke

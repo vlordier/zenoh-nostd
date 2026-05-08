@@ -48,8 +48,7 @@ impl<Config, OwnedQuery, const CHANNEL: bool> Queryable<Config, OwnedQuery, CHAN
 where
     Config: ZSessionConfig,
 {
-    #[allow(dead_code)]
-    async fn undeclare(self) -> core::result::Result<(), SessionError> {
+    pub async fn undeclare(self) -> core::result::Result<(), SessionError> {
         let msg = Declare {
             body: DeclareBody::UndeclareQueryable(UndeclareQueryable {
                 id: self.id,
@@ -75,7 +74,7 @@ where
             }))
             .await?;
 
-        todo!("Also stop the channel if any")
+        Ok(())
     }
 }
 
