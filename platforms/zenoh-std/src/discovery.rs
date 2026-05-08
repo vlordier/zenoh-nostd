@@ -1,11 +1,17 @@
 use std::net::SocketAddr;
+use std::time::Duration;
 
+use async_io::Timer;
 use async_net::UdpSocket;
+use futures_lite::future;
 use zenoh_proto::{
     ZDecode, ZEncode,
     fields::{WhatAmI, ZenohIdProto},
     msgs::{Hello, InitIdentifier, Scout},
 };
+
+/// Timeout for receiving a HELLO response after sending a SCOUT.
+const SCOUT_RECV_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// A discovered node from SCOUT/HELLO.
 #[derive(Debug, Clone, PartialEq)]
@@ -16,6 +22,7 @@ pub struct DiscNode {
 }
 
 /// Send a SCOUT via multicast and return any HELLO responses received.
+/// Waits at most `SCOUT_RECV_TIMEOUT` for a single HELLO before returning.
 pub async fn scout(endpoint: &str, what: u8) -> Result<Vec<DiscNode>, String> {
     let addr: SocketAddr = endpoint
         .parse()
@@ -46,20 +53,30 @@ pub async fn scout(endpoint: &str, what: u8) -> Result<Vec<DiscNode>, String> {
         .await
         .map_err(|e| format!("send SCOUT: {e}"))?;
 
-    // Try to receive a HELLO response
+    // Try to receive a HELLO response within the timeout
     let mut nodes = Vec::new();
     let mut recv_buf = [0u8; 1024];
-    match socket.recv_from(&mut recv_buf).await {
-        Ok((n, _)) => {
-            if let Ok(hello) = <Hello as ZDecode>::z_decode(&mut &recv_buf[..n]) {
-                nodes.push(DiscNode {
-                    zid: hello.identifier.zid,
-                    whatami: hello.identifier.whatami,
-                    locators: hello.locators.map(|s| s.to_string()),
-                });
-            }
+
+    let recv_result = future::or(
+        async { socket.recv_from(&mut recv_buf).await },
+        async {
+            Timer::after(SCOUT_RECV_TIMEOUT).await;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "scout recv timeout",
+            ))
+        },
+    )
+    .await;
+
+    if let Ok((n, _)) = recv_result {
+        if let Ok(hello) = <Hello as ZDecode>::z_decode(&mut &recv_buf[..n]) {
+            nodes.push(DiscNode {
+                zid: hello.identifier.zid,
+                whatami: hello.identifier.whatami,
+                locators: hello.locators.map(|s| s.to_string()),
+            });
         }
-        Err(_) => {}
     }
 
     Ok(nodes)

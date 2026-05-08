@@ -109,7 +109,7 @@ impl ZLinkRx for McLink {
             .socket
             .recv_from(buffer)
             .await
-            .map_err(|_| LinkError::LinkTxFailed)?;
+            .map_err(|_| LinkError::LinkRxFailed)?;
         Ok(len)
     }
 
@@ -124,7 +124,7 @@ impl ZLinkRx for McLinkRx {
             .socket
             .recv_from(buffer)
             .await
-            .map_err(|_| LinkError::LinkTxFailed)?;
+            .map_err(|_| LinkError::LinkRxFailed)?;
         Ok(len)
     }
 

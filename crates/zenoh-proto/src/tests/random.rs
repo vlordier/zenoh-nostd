@@ -1085,3 +1085,30 @@ impl<'a> OpenAck<'a> {
         }
     }
 }
+
+impl Scout {
+    #[cfg(test)]
+    pub(crate) fn rand<'a>(_: &mut impl crate::ZStoreable<'a>) -> Self {
+        let what: u8 = rand::thread_rng().r#gen();
+        Self { what }
+    }
+}
+
+impl<'a> Hello<'a> {
+    #[cfg(test)]
+    pub(crate) fn rand(w: &mut impl crate::ZStoreable<'a>) -> Self {
+        let identifier = InitIdentifier::rand(w);
+        let locators = if rand::thread_rng().gen_bool(0.5) {
+            let len = rand::thread_rng().gen_range(1usize..16);
+            let s = Alphanumeric.sample_string(&mut rand::thread_rng(), len);
+            Some(unsafe { w.store_str(s.as_str()).unwrap() })
+        } else {
+            None
+        };
+        Self {
+            version: crate::VERSION,
+            identifier,
+            locators,
+        }
+    }
+}
