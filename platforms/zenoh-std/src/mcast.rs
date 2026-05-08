@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use async_net::UdpSocket;
 use zenoh_nostd::platform::*;
@@ -8,7 +9,7 @@ use zenoh_nostd::platform::*;
 /// Used for SCOUT/HELLO peer discovery. Not streamed — each read/write
 /// is a discrete datagram.
 pub struct McLink {
-    socket: UdpSocket,
+    socket: Arc<UdpSocket>,
     mtu: u16,
     multicast_addr: SocketAddr,
 }
@@ -18,9 +19,11 @@ impl McLink {
         multicast_addr: SocketAddr,
         bind_addr: SocketAddr,
     ) -> core::result::Result<Self, LinkError> {
-        let socket = UdpSocket::bind(bind_addr)
-            .await
-            .map_err(|_| LinkError::CouldNotConnect)?;
+        let socket = Arc::new(
+            UdpSocket::bind(bind_addr)
+                .await
+                .map_err(|_| LinkError::CouldNotConnect)?,
+        );
 
         let multi_ip = match multicast_addr.ip() {
             std::net::IpAddr::V4(ip) => ip,
@@ -43,13 +46,13 @@ impl McLink {
 }
 
 pub struct McLinkTx {
-    socket: UdpSocket,
+    socket: Arc<UdpSocket>,
     multicast_addr: SocketAddr,
     mtu: u16,
 }
 
 pub struct McLinkRx {
-    socket: UdpSocket,
+    socket: Arc<UdpSocket>,
     mtu: u16,
 }
 
@@ -109,12 +112,12 @@ impl ZLinkRx for McLink {
             .socket
             .recv_from(buffer)
             .await
-            .map_err(|_| LinkError::LinkTxFailed)?;
+            .map_err(|_| LinkError::LinkRxFailed)?;
         Ok(len)
     }
 
     async fn read_exact(&mut self, _: &mut [u8]) -> core::result::Result<(), LinkError> {
-        unimplemented!()
+        Err(LinkError::LinkRxFailed)
     }
 }
 
@@ -124,12 +127,12 @@ impl ZLinkRx for McLinkRx {
             .socket
             .recv_from(buffer)
             .await
-            .map_err(|_| LinkError::LinkTxFailed)?;
+            .map_err(|_| LinkError::LinkRxFailed)?;
         Ok(len)
     }
 
     async fn read_exact(&mut self, _: &mut [u8]) -> core::result::Result<(), LinkError> {
-        unimplemented!()
+        Err(LinkError::LinkRxFailed)
     }
 }
 

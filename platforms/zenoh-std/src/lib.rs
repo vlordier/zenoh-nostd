@@ -159,9 +159,12 @@ impl ZLinkManager for StdLinkManager {
             }
             "mcast" => {
                 let addr = SocketAddr::try_from(address)?;
+                let bind_addr = SocketAddr::new(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                    addr.port(),
+                );
                 Ok(Self::Link::Mcast(
-                    mcast::McLink::new(addr, "0.0.0.0:0".parse().unwrap())
-                        .await?,
+                    mcast::McLink::new(addr, bind_addr).await?,
                 ))
             }
             _ => zenoh::zbail!(LinkError::CouldNotParseProtocol),
@@ -239,8 +242,12 @@ impl ZLinkManager for StdLinkManager {
             }
             "mcast" => {
                 let addr = SocketAddr::try_from(address)?;
+                let bind_addr = SocketAddr::new(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                    addr.port(),
+                );
                 Ok(Self::Link::Mcast(
-                    mcast::McLink::new(addr, "0.0.0.0:0".parse().unwrap()).await?,
+                    mcast::McLink::new(addr, bind_addr).await?,
                 ))
             }
             _ => zenoh::zbail!(LinkError::CouldNotParseProtocol),
