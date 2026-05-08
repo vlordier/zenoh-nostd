@@ -462,3 +462,14 @@ fn transport_peer_simultaneous_connect_higher_zid_yields() {
     assert!(response.is_some(), "higher ZID should yield with InitAck");
     assert!(desc.is_none(), "description only set after OpenSyn/OpenAck");
 }
+
+#[test]
+fn close_message_roundtrip() {
+    let close = zenoh_proto::msgs::Close::default();
+    let mut buf = [0u8; 64];
+    let mut writer = &mut buf[..];
+    <zenoh_proto::msgs::Close as zenoh_proto::ZEncode>::z_encode(&close, &mut writer).unwrap();
+    let len = 64 - writer.len();
+    let decoded = <zenoh_proto::msgs::Close as zenoh_proto::ZDecode>::z_decode(&mut &buf[..len]).unwrap();
+    assert_eq!(close, decoded);
+}

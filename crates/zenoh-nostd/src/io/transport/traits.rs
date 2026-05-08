@@ -57,6 +57,8 @@ pub trait ZTransportLinkTx {
         }
     }
 
+    /// Send a Close message and flush it to the transport link.
+    /// This gracefully terminates the transport session.
     fn close(
         &mut self,
     ) -> impl Future<Output = core::result::Result<(), zenoh_proto::TransportLinkError>> {
