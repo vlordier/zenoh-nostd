@@ -79,6 +79,18 @@ pub struct ExampleConfig {
     transports: TransportLinkManager<LinkManager>,
 }
 
+impl ExampleConfig {
+    pub fn with_transports(mut self, transports: TransportLinkManager<LinkManager>) -> Self {
+        self.transports = transports;
+        self
+    }
+
+    pub fn with_whatami(mut self, whatami: WhatAmI) -> Self {
+        self.transports = self.transports.with_whatami(whatami);
+        self
+    }
+}
+
 #[cfg(feature = "alloc")]
 impl ZBrokerConfig for ExampleConfig {
     type LinkManager = LinkManager;
