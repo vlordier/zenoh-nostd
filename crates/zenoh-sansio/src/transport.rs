@@ -20,9 +20,11 @@ use crate::transport::establishment::State;
 
 pub struct TransportBuilder<Buff> {
     zid: ZenohIdProto,
+    whatami: WhatAmI,
     batch_size: u16,
     lease: Duration,
     resolution: Resolution,
+    max_fragments: usize,
 
     buff: Buff,
 }
@@ -34,14 +36,21 @@ impl<Buff> TransportBuilder<Buff> {
     {
         TransportBuilder {
             zid: ZenohIdProto::default(),
+            whatami: WhatAmI::default(),
             batch_size: buff.as_ref().len() as u16,
             lease: Duration::from_secs(10),
             resolution: Resolution::default(),
+            max_fragments: 1,
             buff,
         }
     }
     pub fn with_zid(mut self, zid: ZenohIdProto) -> Self {
         self.zid = zid;
+        self
+    }
+
+    pub fn with_whatami(mut self, whatami: WhatAmI) -> Self {
+        self.whatami = whatami;
         self
     }
 
@@ -60,12 +69,19 @@ impl<Buff> TransportBuilder<Buff> {
         self
     }
 
+    pub fn with_max_fragments(mut self, max: usize) -> Self {
+        self.max_fragments = max;
+        self
+    }
+
     pub fn with_buff<NewBuff>(self, buff: NewBuff) -> TransportBuilder<NewBuff> {
         TransportBuilder {
             zid: self.zid,
+            whatami: self.whatami,
             batch_size: self.batch_size,
             lease: self.lease,
             resolution: self.resolution,
+            max_fragments: self.max_fragments,
             buff,
         }
     }
@@ -81,14 +97,16 @@ impl<Buff> TransportBuilder<Buff> {
                 0,
                 self.resolution,
                 self.lease,
-            ),
+            )
+            .with_max_fragments(self.max_fragments),
             rx: TransportRx::new(
                 self.buff,
                 self.batch_size as usize,
                 0,
                 self.resolution,
                 self.lease,
-            ),
+            )
+            .with_max_fragments(self.max_fragments),
             mine_zid: self.zid,
             other_zid: self.zid,
         }
@@ -108,6 +126,7 @@ impl<Buff> TransportBuilder<Buff> {
     {
         let state = State::WaitingInitSyn {
             mine_zid: self.zid,
+            mine_whatami: self.whatami,
             mine_batch_size: self.batch_size,
             mine_resolution: self.resolution,
             mine_lease: self.lease,
@@ -119,7 +138,8 @@ impl<Buff> TransportBuilder<Buff> {
             0,
             self.resolution,
             self.lease,
-        );
+        )
+        .with_max_fragments(self.max_fragments);
 
         let rx = TransportRx::new(
             self.buff,
@@ -127,7 +147,8 @@ impl<Buff> TransportBuilder<Buff> {
             0,
             self.resolution,
             self.lease,
-        );
+        )
+        .with_max_fragments(self.max_fragments);
 
         Handshake::PendingRecv {
             state,
@@ -154,6 +175,7 @@ impl<Buff> TransportBuilder<Buff> {
     {
         let state = State::WaitingInitSyn {
             mine_zid: self.zid,
+            mine_whatami: self.whatami,
             mine_batch_size: self.batch_size,
             mine_resolution: self.resolution,
             mine_lease: self.lease,
@@ -165,7 +187,8 @@ impl<Buff> TransportBuilder<Buff> {
             0,
             self.resolution,
             self.lease,
-        );
+        )
+        .with_max_fragments(self.max_fragments);
 
         let rx = TransportRx::new(
             self.buff,
@@ -173,7 +196,8 @@ impl<Buff> TransportBuilder<Buff> {
             0,
             self.resolution,
             self.lease,
-        );
+        )
+        .with_max_fragments(self.max_fragments);
 
         Handshake::PendingRecv {
             state,
@@ -200,6 +224,7 @@ impl<Buff> TransportBuilder<Buff> {
     {
         let state = State::WaitingInitAck {
             mine_zid: self.zid,
+            mine_whatami: self.whatami,
             mine_batch_size: self.batch_size,
             mine_resolution: self.resolution,
             mine_lease: self.lease,
@@ -211,7 +236,8 @@ impl<Buff> TransportBuilder<Buff> {
             0,
             self.resolution,
             self.lease,
-        );
+        )
+        .with_max_fragments(self.max_fragments);
 
         let rx = TransportRx::new(
             self.buff,
@@ -219,14 +245,15 @@ impl<Buff> TransportBuilder<Buff> {
             0,
             self.resolution,
             self.lease,
-        );
+        )
+        .with_max_fragments(self.max_fragments);
 
         Handshake::PendingInit {
             state,
             init: InitSyn {
                 identifier: InitIdentifier {
                     zid: self.zid,
-                    ..Default::default()
+                    whatami: self.whatami,
                 },
                 resolution: InitResolution {
                     resolution: self.resolution,
@@ -257,6 +284,7 @@ impl<Buff> TransportBuilder<Buff> {
     {
         let state = State::WaitingInitAck {
             mine_zid: self.zid,
+            mine_whatami: self.whatami,
             mine_batch_size: self.batch_size,
             mine_resolution: self.resolution,
             mine_lease: self.lease,
@@ -268,7 +296,8 @@ impl<Buff> TransportBuilder<Buff> {
             0,
             self.resolution,
             self.lease,
-        );
+        )
+        .with_max_fragments(self.max_fragments);
 
         let rx = TransportRx::new(
             self.buff,
@@ -276,14 +305,15 @@ impl<Buff> TransportBuilder<Buff> {
             0,
             self.resolution,
             self.lease,
-        );
+        )
+        .with_max_fragments(self.max_fragments);
 
         Handshake::PendingInit {
             state,
             init: InitSyn {
                 identifier: InitIdentifier {
                     zid: self.zid,
-                    ..Default::default()
+                    whatami: self.whatami,
                 },
                 resolution: InitResolution {
                     resolution: self.resolution,
@@ -317,7 +347,7 @@ impl<Buff> Transport<Buff> {
         TransportBuilder::new(buff)
     }
 
-    pub(crate) fn new(description: Description, tx: Buff, rx: Buff) -> Self {
+    pub(crate) fn new(description: Description, tx: Buff, rx: Buff, max_fragments: usize) -> Self {
         Self {
             tx: TransportTx::new(
                 tx,
@@ -325,14 +355,16 @@ impl<Buff> Transport<Buff> {
                 description.mine_sn,
                 description.resolution,
                 description.mine_lease,
-            ),
+            )
+            .with_max_fragments(max_fragments),
             rx: TransportRx::new(
                 rx,
                 description.batch_size as usize,
                 description.other_sn,
                 description.resolution,
                 description.other_lease,
-            ),
+            )
+            .with_max_fragments(max_fragments),
             mine_zid: description.mine_zid,
             other_zid: description.other_zid,
         }

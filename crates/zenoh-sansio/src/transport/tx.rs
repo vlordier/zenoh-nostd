@@ -31,6 +31,14 @@ pub struct TransportTx<Buff> {
     lease: Duration,
 
     state: State,
+
+    max_fragments: usize,
+    fragment_buff: Option<Buff>,
+    fragment_sn: u32,
+    fragment_offset: usize,
+    fragment_len: usize,
+    fragment_reliability: zenoh_proto::fields::Reliability,
+    fragment_qos: zenoh_proto::exts::QoS,
 }
 
 impl<Buff> TransportTx<Buff> {
@@ -51,6 +59,13 @@ impl<Buff> TransportTx<Buff> {
             last_frame: None,
             lease,
             state: State::Opened,
+            max_fragments: 1,
+            fragment_buff: None,
+            fragment_sn: 0,
+            fragment_offset: 0,
+            fragment_len: 0,
+            fragment_reliability: zenoh_proto::fields::Reliability::BestEffort,
+            fragment_qos: zenoh_proto::exts::QoS::default(),
         }
     }
 
@@ -100,11 +115,25 @@ impl<Buff> TransportTx<Buff> {
         matches!(self.state, State::Closed)
     }
 
+    pub fn with_max_fragments(mut self, max: usize) -> Self {
+        self.max_fragments = max;
+        self
+    }
+
+    pub fn max_fragments(&self) -> usize {
+        self.max_fragments
+    }
+
     pub(crate) fn encode(&mut self, msg: MessageRef<'_>, bytes: Option<&[u8]>) -> Option<usize>
     where
-        Buff: AsMut<[u8]> + AsRef<[u8]>,
+        Buff: AsMut<[u8]> + AsRef<[u8]> + Clone,
     {
-        let max = core::cmp::min(self.buff.as_ref().len(), self.batch_size);
+        if self.fragment_buff.is_some() {
+            return self.encode_fragment_continuation();
+        }
+
+        let buff_len = self.buff.as_ref().len();
+        let max = core::cmp::min(buff_len, self.batch_size);
         let mut buff = &mut self.buff.as_mut()[self.cursor..max];
 
         let start = buff.len();
@@ -126,7 +155,6 @@ impl<Buff> TransportTx<Buff> {
 
                     header.z_encode(&mut buff).ok()?;
 
-                    // TODO: wrap with resolution
                     let _ = self.resolution;
                     self.sn = self.sn.wrapping_add(1);
 
@@ -135,10 +163,65 @@ impl<Buff> TransportTx<Buff> {
                     None
                 };
 
-                if let Some(bytes) = bytes {
-                    buff.write_exact(bytes).ok()?;
+                let write_body = |buff: &mut &mut [u8]| {
+                    if let Some(bytes) = bytes {
+                        buff.write_exact(bytes).ok();
+                    } else {
+                        msg.body.z_encode(buff).ok();
+                    }
+                };
+
+                if bytes.is_none_or(|b| b.len() <= buff.len()) && self.max_fragments <= 1 {
+                    write_body(&mut buff);
+                } else if let Some(bytes) = bytes
+                    && bytes.len() > buff.len()
+                    && self.max_fragments > 1
+                {
+                    let sn = self.sn.wrapping_sub(1);
+                    let chunk = buff.len();
+
+                    let remaining = &bytes[chunk..];
+                    let staging_cap = buff_len;
+
+                    // Enforce max_fragments: total bytes must fit in first chunk + (max_fragments-1)
+                    // continuation frames each carrying up to staging_cap bytes.
+                    // If not, we cannot send this message with the configured fragment limit.
+                    let max_continuations = self.max_fragments.saturating_sub(1);
+                    if remaining.len() > max_continuations * staging_cap {
+                        zenoh_proto::error!(
+                            "Message too large for max_fragments={}: payload {} bytes exceeds \
+                             limit of {} bytes (1 frame * {} + {} continuations * {})",
+                            self.max_fragments,
+                            bytes.len(),
+                            chunk + max_continuations * staging_cap,
+                            chunk,
+                            max_continuations,
+                            staging_cap,
+                        );
+                        return None;
+                    }
+
+                    // Clamp to staging buffer capacity to prevent panic.
+                    let clamped_len = remaining.len().min(staging_cap);
+
+                    buff.write_exact(&bytes[..chunk]).ok()?;
+                    let written = chunk;
+
+                    let _ = buff;
+
+                    let mut tmp = self.buff.clone();
+                    tmp.as_mut()[..clamped_len].copy_from_slice(&remaining[..clamped_len]);
+                    self.fragment_buff = Some(tmp);
+                    self.fragment_len = clamped_len;
+                    self.fragment_offset = 0;
+                    self.fragment_sn = sn;
+                    self.fragment_reliability = r;
+                    self.fragment_qos = q;
+
+                    self.cursor += written;
+                    return Some(written);
                 } else {
-                    msg.body.z_encode(&mut buff).ok()?;
+                    write_body(&mut buff);
                 }
 
                 if let Some(header) = header {
@@ -159,11 +242,45 @@ impl<Buff> TransportTx<Buff> {
         self.cursor += start - buff.len();
         Some(start - buff.len())
     }
+
+    fn encode_fragment_continuation(&mut self) -> Option<usize>
+    where
+        Buff: AsMut<[u8]> + AsRef<[u8]>,
+    {
+        let max = core::cmp::min(self.buff.as_ref().len(), self.batch_size);
+        let mut buff = &mut self.buff.as_mut()[self.cursor..max];
+        let start = buff.len();
+
+        let header = FrameHeader {
+            reliability: self.fragment_reliability,
+            sn: self.fragment_sn,
+            qos: self.fragment_qos,
+        };
+        header.z_encode(&mut buff).ok()?;
+        let _ = self.resolution;
+
+        let frag_buff = self.fragment_buff.as_ref()?;
+        let remaining = self.fragment_len - self.fragment_offset;
+        let chunk = core::cmp::min(buff.len(), remaining);
+        buff[..chunk].copy_from_slice(
+            &frag_buff.as_ref()[self.fragment_offset..self.fragment_offset + chunk],
+        );
+        buff = &mut buff[chunk..];
+
+        self.fragment_offset += chunk;
+
+        if self.fragment_offset >= self.fragment_len {
+            self.fragment_buff = None;
+        }
+
+        self.cursor += start - buff.len();
+        Some(start - buff.len())
+    }
 }
 
 impl<Buff> ZTransportTx for TransportTx<Buff>
 where
-    Buff: AsMut<[u8]> + AsRef<[u8]>,
+    Buff: AsMut<[u8]> + AsRef<[u8]> + Clone,
 {
     fn keepalive(&mut self) {
         self.transport(TransportMessage::KeepAlive(KeepAlive));

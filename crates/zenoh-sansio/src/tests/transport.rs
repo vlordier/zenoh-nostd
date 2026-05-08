@@ -2,11 +2,16 @@ use crate::{Transport, ZTransportRx, ZTransportTx, transport::establishment::Sta
 use core::{cell::RefCell, time::Duration};
 use zenoh_proto::{exts::*, fields::*, keyexpr, msgs::*};
 
+fn zid(val: u128) -> ZenohIdProto {
+    ZenohIdProto::try_from(&val.to_le_bytes()[..]).unwrap()
+}
+
 #[test]
 fn transport_state_handshake() {
     let a_zid = ZenohIdProto::default();
     let mut a = State::WaitingInitSyn {
         mine_zid: a_zid,
+        mine_whatami: WhatAmI::Client,
         mine_batch_size: 512,
         mine_resolution: Resolution::default(),
         mine_lease: Duration::from_secs(30),
@@ -15,6 +20,7 @@ fn transport_state_handshake() {
     let b_zid = ZenohIdProto::default();
     let mut b = State::WaitingInitAck {
         mine_zid: b_zid,
+        mine_whatami: WhatAmI::Client,
         mine_batch_size: 1025,
         mine_resolution: Resolution::default(),
         mine_lease: Duration::from_secs(37),
@@ -63,6 +69,133 @@ fn transport_state_handshake() {
     assert!(a.description().is_some() && b.description().is_some());
     assert_eq!(desc.unwrap().batch_size, 512);
     assert_eq!(desc.unwrap().resolution, Resolution::default());
+}
+
+#[test]
+fn transport_peer_handshake() {
+    let socket = ([0u8; 512], 0usize, 0usize);
+    let socket_ref = RefCell::new(socket);
+
+    let a = Transport::builder([0u8; 512]).with_whatami(WhatAmI::Peer);
+    let b = Transport::builder([0u8; 512]).with_whatami(WhatAmI::Peer);
+
+    let read = |socket: &mut &RefCell<([u8; 512], usize, usize)>,
+                bytes: &mut [u8]|
+     -> core::result::Result<usize, i32> {
+        let mut borrow_mut = socket.borrow_mut();
+
+        let remaining = borrow_mut.2 - borrow_mut.1;
+        if remaining == 0 {
+            return Ok(0);
+        }
+
+        let to_read = bytes.len().min(remaining);
+
+        let slice = &borrow_mut.0[borrow_mut.1..(to_read + borrow_mut.1)];
+        bytes[..slice.len()].copy_from_slice(slice);
+        borrow_mut.1 += to_read;
+
+        Ok(to_read)
+    };
+
+    let write = |socket: &mut &RefCell<([u8; 512], usize, usize)>,
+                 bytes: &[u8]|
+     -> core::result::Result<(), i32> {
+        let mut borrow_mut = socket.borrow_mut();
+        borrow_mut.0[..bytes.len()].copy_from_slice(bytes);
+        borrow_mut.1 = 0;
+        borrow_mut.2 = bytes.len();
+        Ok(())
+    };
+
+    let mut ha = a.listen(&socket_ref, &read, &write);
+    let mut hb = b.connect(&socket_ref, &read, &write);
+
+    hb.poll().unwrap();
+
+    for _ in 0..2 {
+        ha.poll().unwrap();
+        hb.poll().unwrap();
+    }
+
+    let ta = ha
+        .poll()
+        .expect("Unexpected Error")
+        .expect("Transport A is not opened yet")
+        .open();
+
+    let tb = hb
+        .poll()
+        .expect("Unexpected Error")
+        .expect("Transport B is not opened yet")
+        .open();
+
+    assert_eq!(ta.mine_zid, tb.other_zid);
+    assert_eq!(ta.other_zid, tb.mine_zid);
+}
+
+#[test]
+fn transport_peer_simultaneous_connect_lower_wins() {
+    let socket = ([0u8; 512], 0usize, 0usize);
+    let socket_ref = RefCell::new(socket);
+
+    let a = Transport::builder([0u8; 512])
+        .with_whatami(WhatAmI::Peer)
+        .with_zid(zid(2));
+    let b = Transport::builder([0u8; 512])
+        .with_whatami(WhatAmI::Peer)
+        .with_zid(zid(1));
+
+    let read = |socket: &mut &RefCell<([u8; 512], usize, usize)>,
+                bytes: &mut [u8]|
+     -> core::result::Result<usize, i32> {
+        let mut borrow_mut = socket.borrow_mut();
+        let remaining = borrow_mut.2 - borrow_mut.1;
+        if remaining == 0 {
+            return Ok(0);
+        }
+        let to_read = bytes.len().min(remaining);
+        let slice = &borrow_mut.0[borrow_mut.1..(to_read + borrow_mut.1)];
+        bytes[..slice.len()].copy_from_slice(slice);
+        borrow_mut.1 += to_read;
+        Ok(to_read)
+    };
+
+    let write = |socket: &mut &RefCell<([u8; 512], usize, usize)>,
+                 bytes: &[u8]|
+     -> core::result::Result<(), i32> {
+        let mut borrow_mut = socket.borrow_mut();
+        borrow_mut.0[..bytes.len()].copy_from_slice(bytes);
+        borrow_mut.1 = 0;
+        borrow_mut.2 = bytes.len();
+        Ok(())
+    };
+
+    let mut ha = a.connect(&socket_ref, &read, &write);
+    let mut hb = b.connect(&socket_ref, &read, &write);
+
+    ha.poll().unwrap();
+    hb.poll().unwrap();
+
+    for _ in 0..5 {
+        ha.poll().unwrap();
+        hb.poll().unwrap();
+    }
+
+    let ta = ha
+        .poll()
+        .expect("Unexpected Error")
+        .expect("Transport A is not opened yet")
+        .open();
+
+    let tb = hb
+        .poll()
+        .expect("Unexpected Error")
+        .expect("Transport B is not opened yet")
+        .open();
+
+    assert_eq!(ta.mine_zid, tb.other_zid);
+    assert_eq!(ta.other_zid, tb.mine_zid);
 }
 
 #[test]
@@ -199,4 +332,247 @@ fn transport_streamed_codec() {
 
     assert_eq!(flush.count(), 0);
     assert_eq!(m, msg);
+}
+
+#[test]
+fn transport_builder_peer_initsyn_has_peer_whatami() {
+    let socket = ([0u8; 512], 0usize, 0usize);
+    let socket_ref = RefCell::new(socket);
+
+    let a = Transport::builder([0u8; 512]).with_whatami(WhatAmI::Peer);
+
+    let write = |socket: &mut &RefCell<([u8; 512], usize, usize)>,
+                 bytes: &[u8]|
+     -> core::result::Result<(), i32> {
+        let mut borrow_mut = socket.borrow_mut();
+        borrow_mut.0[..bytes.len()].copy_from_slice(bytes);
+        borrow_mut.1 = 0;
+        borrow_mut.2 = bytes.len();
+        Ok(())
+    };
+
+    let mut h = a.connect(&socket_ref, |_, _| Ok(0usize), write);
+    h.poll().unwrap();
+
+    let whatami = {
+        let borrow = socket_ref.borrow();
+        <InitSyn as zenoh_proto::ZDecode>::z_decode(&mut &borrow.0[..borrow.2])
+            .unwrap()
+            .identifier
+            .whatami
+    };
+
+    assert_eq!(whatami, WhatAmI::Peer);
+}
+
+#[test]
+fn transport_peer_simultaneous_connect_equal_zid_errors() {
+    let zid = ZenohIdProto::default();
+
+    let mut a = State::WaitingInitAck {
+        mine_zid: zid,
+        mine_whatami: WhatAmI::Peer,
+        mine_batch_size: 512,
+        mine_resolution: Resolution::default(),
+        mine_lease: Duration::from_secs(30),
+    };
+
+    let init = InitSyn {
+        identifier: InitIdentifier {
+            zid,
+            whatami: WhatAmI::Peer,
+        },
+        ..Default::default()
+    };
+
+    let mut buff = [0u8; 128];
+    let mut writer = &mut buff[..];
+    <InitSyn as zenoh_proto::ZEncode>::z_encode(&init, &mut writer).unwrap();
+    let len = 128 - writer.len();
+    let encoded = &buff[..len];
+
+    let (response, desc) = a.poll((TransportMessage::InitSyn(init), encoded));
+
+    assert!(response.is_none(), "expected no response for equal ZIDs");
+    assert!(desc.is_none(), "expected no description for equal ZIDs");
+}
+
+#[test]
+fn transport_peer_simultaneous_connect_lower_zid_wins() {
+    let higher_zid = zid(2);
+    let lower_zid = zid(1);
+
+    let mut a = State::WaitingInitAck {
+        mine_zid: lower_zid,
+        mine_whatami: WhatAmI::Peer,
+        mine_batch_size: 512,
+        mine_resolution: Resolution::default(),
+        mine_lease: Duration::from_secs(30),
+    };
+
+    let init = InitSyn {
+        identifier: InitIdentifier {
+            zid: higher_zid,
+            whatami: WhatAmI::Peer,
+        },
+        ..Default::default()
+    };
+
+    let mut buff = [0u8; 128];
+    let mut writer = &mut buff[..];
+    <InitSyn as zenoh_proto::ZEncode>::z_encode(&init, &mut writer).unwrap();
+    let len = 128 - writer.len();
+    let encoded = &buff[..len];
+
+    let (response, desc) = a.poll((TransportMessage::InitSyn(init), encoded));
+
+    assert!(
+        response.is_none(),
+        "lower ZID should not yield, expected no response"
+    );
+    assert!(
+        desc.is_none(),
+        "expected no description while waiting for InitAck"
+    );
+}
+
+#[test]
+fn transport_peer_simultaneous_connect_higher_zid_yields() {
+    let higher_zid = zid(2);
+    let lower_zid = zid(1);
+
+    let mut a = State::WaitingInitAck {
+        mine_zid: higher_zid,
+        mine_whatami: WhatAmI::Peer,
+        mine_batch_size: 512,
+        mine_resolution: Resolution::default(),
+        mine_lease: Duration::from_secs(30),
+    };
+
+    let init = InitSyn {
+        identifier: InitIdentifier {
+            zid: lower_zid,
+            whatami: WhatAmI::Peer,
+        },
+        ..Default::default()
+    };
+
+    let mut buff = [0u8; 128];
+    let mut writer = &mut buff[..];
+    <InitSyn as zenoh_proto::ZEncode>::z_encode(&init, &mut writer).unwrap();
+    let len = 128 - writer.len();
+    let encoded = &buff[..len];
+
+    let (response, desc) = a.poll((TransportMessage::InitSyn(init), encoded));
+
+    assert!(response.is_some(), "higher ZID should yield with InitAck");
+    assert!(desc.is_none(), "description only set after OpenSyn/OpenAck");
+}
+
+#[test]
+fn fragmentation_two_frame_reassembly() {
+    let payload: [u8; 50] = [0x42; 50];
+
+    // Encode a valid message to get the wire format
+    let mut text = Transport::builder([0u8; 512]).codec();
+    let msg = NetworkMessage {
+        reliability: Reliability::Reliable,
+        qos: QoS::default(),
+        body: NetworkBody::Push(Push {
+            wire_expr: WireExpr::from(keyexpr::from_str_unchecked("t")),
+            payload: PushBody::Put(Put {
+                payload: &payload,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+    };
+    text.tx.encode_ref(core::iter::once(msg.as_ref()));
+    let encoded = text.tx.flush_raw().unwrap();
+
+    // encoded = [FrameHeader][Push bytes]. Split after FH.
+    let init_len = encoded.len();
+    let mut reader = &encoded[..];
+    let _fh = <FrameHeader as zenoh_proto::ZDecode>::z_decode(&mut reader).unwrap();
+    let fh_len = init_len - reader.len();
+    let fh_bytes = &encoded[..fh_len];
+    let push_data = &encoded[fh_len..];
+    let split = push_data.len() / 2;
+
+    // Build two frames with same SN in a buffer
+    let mut fbuf = [0u8; 512];
+    let mut cursor = 0;
+    fbuf[cursor..cursor + fh_len].copy_from_slice(fh_bytes);
+    cursor += fh_len;
+    fbuf[cursor..cursor + split].copy_from_slice(&push_data[..split]);
+    cursor += split;
+    fbuf[cursor..cursor + fh_len].copy_from_slice(fh_bytes);
+    cursor += fh_len;
+    fbuf[cursor..cursor + (push_data.len() - split)].copy_from_slice(&push_data[split..]);
+    cursor += push_data.len() - split;
+
+    // Feed to RX with reassembly and verify one message produced
+    let mut rx = Transport::builder([0u8; 1024])
+        .with_max_fragments(4)
+        .codec()
+        .rx;
+    rx.decode_raw(&fbuf[..cursor]).unwrap();
+    let count = rx.flush().count();
+    assert_eq!(
+        count, 1,
+        "two frames with same SN should produce one message"
+    );
+}
+
+#[test]
+fn fragmentation_multi_frame_reassembly() {
+    let payload: [u8; 200] = [0x42; 200];
+
+    let mut text = Transport::builder([0u8; 512]).codec();
+    let msg = NetworkMessage {
+        reliability: Reliability::Reliable,
+        qos: QoS::default(),
+        body: NetworkBody::Push(Push {
+            wire_expr: WireExpr::from(keyexpr::from_str_unchecked("t")),
+            payload: PushBody::Put(Put {
+                payload: &payload,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+    };
+    text.tx.encode_ref(core::iter::once(msg.as_ref()));
+    let encoded = text.tx.flush_raw().unwrap();
+
+    let init_len = encoded.len();
+    let mut reader = &encoded[..];
+    let _fh = <FrameHeader as zenoh_proto::ZDecode>::z_decode(&mut reader).unwrap();
+    let fh_len = init_len - reader.len();
+    let fh_bytes = &encoded[..fh_len];
+    let push_data = &encoded[fh_len..];
+    let third = push_data.len() / 3;
+
+    let mut fbuf = [0u8; 512];
+    let mut cursor = 0;
+
+    // 3 fragments, same SN
+    for i in 0..3 {
+        fbuf[cursor..cursor + fh_len].copy_from_slice(fh_bytes);
+        cursor += fh_len;
+        let start = i * third;
+        let end = if i == 2 { push_data.len() } else { start + third };
+        fbuf[cursor..cursor + (end - start)].copy_from_slice(&push_data[start..end]);
+        cursor += end - start;
+    }
+
+    let mut rx = Transport::builder([0u8; 1024])
+        .with_max_fragments(4)
+        .codec()
+        .rx;
+    rx.decode_raw(&fbuf[..cursor]).unwrap();
+    let count = rx.flush().count();
+    assert_eq!(
+        count, 1,
+        "three frames with same SN should produce one message"
+    );
 }
