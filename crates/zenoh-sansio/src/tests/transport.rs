@@ -523,3 +523,56 @@ fn fragmentation_two_frame_reassembly() {
         "two frames with same SN should produce one message"
     );
 }
+
+#[test]
+fn fragmentation_multi_frame_reassembly() {
+    let payload: [u8; 200] = [0x42; 200];
+
+    let mut text = Transport::builder([0u8; 512]).codec();
+    let msg = NetworkMessage {
+        reliability: Reliability::Reliable,
+        qos: QoS::default(),
+        body: NetworkBody::Push(Push {
+            wire_expr: WireExpr::from(keyexpr::from_str_unchecked("t")),
+            payload: PushBody::Put(Put {
+                payload: &payload,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+    };
+    text.tx.encode_ref(core::iter::once(msg.as_ref()));
+    let encoded = text.tx.flush_raw().unwrap();
+
+    let init_len = encoded.len();
+    let mut reader = &encoded[..];
+    let _fh = <FrameHeader as zenoh_proto::ZDecode>::z_decode(&mut reader).unwrap();
+    let fh_len = init_len - reader.len();
+    let fh_bytes = &encoded[..fh_len];
+    let push_data = &encoded[fh_len..];
+    let third = push_data.len() / 3;
+
+    let mut fbuf = [0u8; 512];
+    let mut cursor = 0;
+
+    // 3 fragments, same SN
+    for i in 0..3 {
+        fbuf[cursor..cursor + fh_len].copy_from_slice(fh_bytes);
+        cursor += fh_len;
+        let start = i * third;
+        let end = if i == 2 { push_data.len() } else { start + third };
+        fbuf[cursor..cursor + (end - start)].copy_from_slice(&push_data[start..end]);
+        cursor += end - start;
+    }
+
+    let mut rx = Transport::builder([0u8; 1024])
+        .with_max_fragments(4)
+        .codec()
+        .rx;
+    rx.decode_raw(&fbuf[..cursor]).unwrap();
+    let count = rx.flush().count();
+    assert_eq!(
+        count, 1,
+        "three frames with same SN should produce one message"
+    );
+}
