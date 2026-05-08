@@ -42,8 +42,7 @@ impl<'a, 'res, Config, OwnedSample, const CHANNEL: bool>
 where
     Config: ZSessionConfig,
 {
-    #[allow(dead_code)]
-    async fn undeclare(self) -> core::result::Result<(), SessionError> {
+    pub async fn undeclare(self) -> core::result::Result<(), SessionError> {
         let msg = Declare {
             body: DeclareBody::UndeclareSubscriber(UndeclareSubscriber {
                 id: self.id,
@@ -65,7 +64,8 @@ where
             }))
             .await?;
 
-        todo!("Also stop the channel if any")
+        // TODO: Also stop the channel if any
+        Ok(())
     }
 
     pub fn keyexpr(&self) -> &keyexpr {
