@@ -104,3 +104,26 @@ roundtrips!(
     OpenSyn,
     OpenAck
 );
+
+#[test]
+fn priority_values_distinct() {
+    use crate::fields::Priority;
+    assert_eq!(Priority::Control as u8, 0);
+    assert_eq!(Priority::RealTime as u8, 1);
+    assert_eq!(Priority::InteractiveHigh as u8, 2);
+    assert_eq!(Priority::InteractiveLow as u8, 3);
+    assert_eq!(Priority::DataHigh as u8, 4);
+    assert_eq!(Priority::Data as u8, 5);
+    assert_eq!(Priority::DataLow as u8, 6);
+    assert_eq!(Priority::Background as u8, 7);
+    assert_eq!(Priority::default() as u8, 5);
+}
+
+#[test]
+fn whatami_values_distinct() {
+    use crate::fields::WhatAmI;
+    assert_eq!(WhatAmI::Router as u8, 0);
+    assert_eq!(WhatAmI::Peer as u8, 1);
+    assert_eq!(WhatAmI::Client as u8, 2);
+    assert_eq!(WhatAmI::default() as u8, 2);
+}
