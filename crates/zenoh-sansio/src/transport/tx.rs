@@ -120,6 +120,10 @@ impl<Buff> TransportTx<Buff> {
         self
     }
 
+    pub fn max_fragments(&self) -> usize {
+        self.max_fragments
+    }
+
     pub(crate) fn encode(&mut self, msg: MessageRef<'_>, bytes: Option<&[u8]>) -> Option<usize>
     where
         Buff: AsMut<[u8]> + AsRef<[u8]> + Clone,
@@ -128,7 +132,8 @@ impl<Buff> TransportTx<Buff> {
             return self.encode_fragment_continuation();
         }
 
-        let max = core::cmp::min(self.buff.as_ref().len(), self.batch_size);
+        let buff_len = self.buff.as_ref().len();
+        let max = core::cmp::min(buff_len, self.batch_size);
         let mut buff = &mut self.buff.as_mut()[self.cursor..max];
 
         let start = buff.len();
@@ -174,18 +179,40 @@ impl<Buff> TransportTx<Buff> {
                 {
                     let sn = self.sn.wrapping_sub(1);
                     let chunk = buff.len();
-                    buff.write_exact(&bytes[..chunk]).ok()?;
 
                     let remaining = &bytes[chunk..];
-                    let remaining_len = remaining.len();
+                    let staging_cap = buff_len;
+
+                    // Enforce max_fragments: total bytes must fit in first chunk + (max_fragments-1)
+                    // continuation frames each carrying up to staging_cap bytes.
+                    // If not, we cannot send this message with the configured fragment limit.
+                    let max_continuations = self.max_fragments.saturating_sub(1);
+                    if remaining.len() > max_continuations * staging_cap {
+                        zenoh_proto::error!(
+                            "Message too large for max_fragments={}: payload {} bytes exceeds \
+                             limit of {} bytes (1 frame * {} + {} continuations * {})",
+                            self.max_fragments,
+                            bytes.len(),
+                            chunk + max_continuations * staging_cap,
+                            chunk,
+                            max_continuations,
+                            staging_cap,
+                        );
+                        return None;
+                    }
+
+                    // Clamp to staging buffer capacity to prevent panic.
+                    let clamped_len = remaining.len().min(staging_cap);
+
+                    buff.write_exact(&bytes[..chunk]).ok()?;
                     let written = chunk;
 
                     let _ = buff;
 
                     let mut tmp = self.buff.clone();
-                    tmp.as_mut()[..remaining_len].copy_from_slice(remaining);
+                    tmp.as_mut()[..clamped_len].copy_from_slice(&remaining[..clamped_len]);
                     self.fragment_buff = Some(tmp);
-                    self.fragment_len = remaining_len;
+                    self.fragment_len = clamped_len;
                     self.fragment_offset = 0;
                     self.fragment_sn = sn;
                     self.fragment_reliability = r;

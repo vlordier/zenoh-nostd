@@ -60,7 +60,8 @@ impl<'a, Buff, T, Read, Write> HandshakeReady<'a, Buff, T, Read, Write> {
             rx,
         } = core::mem::replace(self.handshake, Handshake::Opened)
         {
-            Transport::new(description, tx.into_inner(), rx.into_inner())
+            let max_fragments = tx.max_fragments();
+            Transport::new(description, tx.into_inner(), rx.into_inner(), max_fragments)
         } else {
             unreachable!()
         }

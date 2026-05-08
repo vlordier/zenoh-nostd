@@ -347,7 +347,7 @@ impl<Buff> Transport<Buff> {
         TransportBuilder::new(buff)
     }
 
-    pub(crate) fn new(description: Description, tx: Buff, rx: Buff) -> Self {
+    pub(crate) fn new(description: Description, tx: Buff, rx: Buff, max_fragments: usize) -> Self {
         Self {
             tx: TransportTx::new(
                 tx,
@@ -356,7 +356,7 @@ impl<Buff> Transport<Buff> {
                 description.resolution,
                 description.mine_lease,
             )
-            .with_max_fragments(1),
+            .with_max_fragments(max_fragments),
             rx: TransportRx::new(
                 rx,
                 description.batch_size as usize,
@@ -364,7 +364,7 @@ impl<Buff> Transport<Buff> {
                 description.resolution,
                 description.other_lease,
             )
-            .with_max_fragments(1),
+            .with_max_fragments(max_fragments),
             mine_zid: description.mine_zid,
             other_zid: description.other_zid,
         }
