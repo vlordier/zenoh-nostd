@@ -31,6 +31,7 @@ where
     }
 
     pub async fn undeclare(self) -> core::result::Result<(), SessionError> {
+        // TODO: send undeclare interest
         Ok(())
     }
 
