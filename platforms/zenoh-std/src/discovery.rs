@@ -15,13 +15,17 @@ pub struct DiscNode {
     pub locators: Option<String>,
 }
 
-/// Send a SCOUT via multicast and return any HELLO responses received within `attempts` reads.
-pub async fn scout(endpoint: &str, what: u8, attempts: usize) -> Result<Vec<DiscNode>, String> {
+/// Send a SCOUT via multicast and return any HELLO responses received.
+pub async fn scout(endpoint: &str, what: u8) -> Result<Vec<DiscNode>, String> {
     let addr: SocketAddr = endpoint
         .parse()
         .map_err(|_| format!("invalid endpoint: {endpoint}"))?;
 
-    let socket = UdpSocket::bind("0.0.0.0:0")
+    let bind_addr = SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+        addr.port(),
+    );
+    let socket = UdpSocket::bind(bind_addr)
         .await
         .map_err(|e| format!("bind: {e}"))?;
 
@@ -42,23 +46,20 @@ pub async fn scout(endpoint: &str, what: u8, attempts: usize) -> Result<Vec<Disc
         .await
         .map_err(|e| format!("send SCOUT: {e}"))?;
 
-    // Try to receive HELLO responses
+    // Try to receive a HELLO response
     let mut nodes = Vec::new();
     let mut recv_buf = [0u8; 1024];
-
-    for _ in 0..attempts {
-        match socket.recv_from(&mut recv_buf).await {
-            Ok((n, _)) => {
-                if let Ok(hello) = <Hello as ZDecode>::z_decode(&mut &recv_buf[..n]) {
-                    nodes.push(DiscNode {
-                        zid: hello.identifier.zid,
-                        whatami: hello.identifier.whatami,
-                        locators: hello.locators.map(|s| s.to_string()),
-                    });
-                }
+    match socket.recv_from(&mut recv_buf).await {
+        Ok((n, _)) => {
+            if let Ok(hello) = <Hello as ZDecode>::z_decode(&mut &recv_buf[..n]) {
+                nodes.push(DiscNode {
+                    zid: hello.identifier.zid,
+                    whatami: hello.identifier.whatami,
+                    locators: hello.locators.map(|s| s.to_string()),
+                });
             }
-            Err(_) => break,
         }
+        Err(_) => {}
     }
 
     Ok(nodes)
@@ -75,7 +76,12 @@ pub async fn respond_hellos(
         .parse()
         .map_err(|_| format!("invalid endpoint: {endpoint}"))?;
 
-    let socket = UdpSocket::bind(addr)
+    let bind_addr = SocketAddr::new(
+        std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+        addr.port(),
+    );
+
+    let socket = UdpSocket::bind(bind_addr)
         .await
         .map_err(|e| format!("bind: {e}"))?;
 
@@ -99,7 +105,7 @@ pub async fn respond_hellos(
             let bit = 1u8 << (whatami as u8);
             if scout.what == 0 || (scout.what & bit) != 0 {
                 let hello = Hello {
-                    version: 9,
+                    version: zenoh_proto::VERSION,
                     identifier: InitIdentifier { zid, whatami },
                     locators: Some(locators),
                 };
