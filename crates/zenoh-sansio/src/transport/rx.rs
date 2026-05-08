@@ -83,6 +83,7 @@ impl<Buff> TransportRx<Buff> {
         let mut fragment_sn: Option<u32> = None;
         let mut write_pos = 0;
         let mut read_pos = 0;
+        let mut num_fragments = 0;
 
         while read_pos < size {
             if read_pos >= size {
@@ -100,20 +101,30 @@ impl<Buff> TransportRx<Buff> {
 
                 match fragment_sn {
                     None => {
-                        let frame_total = frame_header_len + frame_reader.len();
-                        if read_pos != write_pos {
-                            buff.copy_within(read_pos..read_pos + frame_total, write_pos);
-                        }
+                        // First frame: stay in place. Track payload extent.
+                        // frame_reader.len() is unbounded — cap at size
+                        let max_payload = if read_pos + frame_header_len + frame_reader.len() > size
+                        {
+                            size - read_pos - frame_header_len
+                        } else {
+                            frame_reader.len()
+                        };
                         fragment_sn = Some(header.sn);
-                        write_pos += frame_total;
-                        read_pos += frame_total;
+                        write_pos = read_pos + frame_header_len + max_payload;
+                        read_pos = write_pos;
+                        num_fragments = 1;
                     }
                     Some(sn) if sn == header.sn => {
                         let payload_start = read_pos + frame_header_len;
-                        let payload_len = frame_reader.len();
-                        buff.copy_within(payload_start..payload_start + payload_len, write_pos);
-                        write_pos += payload_len;
-                        read_pos += frame_header_len + payload_len;
+                        let max_payload = if payload_start + frame_reader.len() > size {
+                            size - payload_start
+                        } else {
+                            frame_reader.len()
+                        };
+                        buff.copy_within(payload_start..payload_start + max_payload, write_pos);
+                        write_pos += max_payload;
+                        read_pos += frame_header_len + max_payload;
+                        num_fragments += 1;
                     }
                     Some(_) => {
                         break;
@@ -121,6 +132,12 @@ impl<Buff> TransportRx<Buff> {
                 }
             } else {
                 break;
+            }
+        }
+
+        if num_fragments > 1 {
+            for b in buff[write_pos..size].iter_mut() {
+                *b = 0;
             }
         }
     }

@@ -235,8 +235,9 @@ impl<Buff> TransportTx<Buff> {
         let frag_buff = self.fragment_buff.as_ref()?;
         let remaining = self.fragment_len - self.fragment_offset;
         let chunk = core::cmp::min(buff.len(), remaining);
-        buff[..chunk]
-            .copy_from_slice(&frag_buff.as_ref()[self.fragment_offset..self.fragment_offset + chunk]);
+        buff[..chunk].copy_from_slice(
+            &frag_buff.as_ref()[self.fragment_offset..self.fragment_offset + chunk],
+        );
         buff = &mut buff[chunk..];
 
         self.fragment_offset += chunk;

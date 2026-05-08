@@ -426,8 +426,14 @@ fn transport_peer_simultaneous_connect_lower_zid_wins() {
 
     let (response, desc) = a.poll((TransportMessage::InitSyn(init), encoded));
 
-    assert!(response.is_none(), "lower ZID should not yield, expected no response");
-    assert!(desc.is_none(), "expected no description while waiting for InitAck");
+    assert!(
+        response.is_none(),
+        "lower ZID should not yield, expected no response"
+    );
+    assert!(
+        desc.is_none(),
+        "expected no description while waiting for InitAck"
+    );
 }
 
 #[test]
@@ -461,4 +467,59 @@ fn transport_peer_simultaneous_connect_higher_zid_yields() {
 
     assert!(response.is_some(), "higher ZID should yield with InitAck");
     assert!(desc.is_none(), "description only set after OpenSyn/OpenAck");
+}
+
+#[test]
+fn fragmentation_two_frame_reassembly() {
+    let payload: [u8; 50] = [0x42; 50];
+
+    // Encode a valid message to get the wire format
+    let mut text = Transport::builder([0u8; 512]).codec();
+    let msg = NetworkMessage {
+        reliability: Reliability::Reliable,
+        qos: QoS::default(),
+        body: NetworkBody::Push(Push {
+            wire_expr: WireExpr::from(keyexpr::from_str_unchecked("t")),
+            payload: PushBody::Put(Put {
+                payload: &payload,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+    };
+    text.tx.encode_ref(core::iter::once(msg.as_ref()));
+    let encoded = text.tx.flush_raw().unwrap();
+
+    // encoded = [FrameHeader][Push bytes]. Split after FH.
+    let init_len = encoded.len();
+    let mut reader = &encoded[..];
+    let _fh = <FrameHeader as zenoh_proto::ZDecode>::z_decode(&mut reader).unwrap();
+    let fh_len = init_len - reader.len();
+    let fh_bytes = &encoded[..fh_len];
+    let push_data = &encoded[fh_len..];
+    let split = push_data.len() / 2;
+
+    // Build two frames with same SN in a buffer
+    let mut fbuf = [0u8; 512];
+    let mut cursor = 0;
+    fbuf[cursor..cursor + fh_len].copy_from_slice(fh_bytes);
+    cursor += fh_len;
+    fbuf[cursor..cursor + split].copy_from_slice(&push_data[..split]);
+    cursor += split;
+    fbuf[cursor..cursor + fh_len].copy_from_slice(fh_bytes);
+    cursor += fh_len;
+    fbuf[cursor..cursor + (push_data.len() - split)].copy_from_slice(&push_data[split..]);
+    cursor += push_data.len() - split;
+
+    // Feed to RX with reassembly and verify one message produced
+    let mut rx = Transport::builder([0u8; 1024])
+        .with_max_fragments(4)
+        .codec()
+        .rx;
+    rx.decode_raw(&fbuf[..cursor]).unwrap();
+    let count = rx.flush().count();
+    assert_eq!(
+        count, 1,
+        "two frames with same SN should produce one message"
+    );
 }
