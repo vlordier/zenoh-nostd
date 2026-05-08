@@ -104,3 +104,5 @@ roundtrips!(
     OpenSyn,
     OpenAck
 );
+
+roundtrips!(discovery, Scout, Hello);

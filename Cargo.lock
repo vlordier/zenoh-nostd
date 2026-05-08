@@ -3630,12 +3630,14 @@ dependencies = [
 name = "zenoh-std"
 version = "0.1.0"
 dependencies = [
+ "async-io",
  "async-net",
  "futures-lite",
  "futures-util",
  "socket2",
  "wtx",
  "zenoh-nostd",
+ "zenoh-proto",
 ]
 
 [[package]]
