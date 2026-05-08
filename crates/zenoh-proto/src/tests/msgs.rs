@@ -1,4 +1,4 @@
-use crate::{exts::*, msgs::*};
+use crate::{exts::*, fields::ZenohIdProto, msgs::*};
 
 macro_rules! roundtrip {
     ($ty:ty) => {{
@@ -104,3 +104,49 @@ roundtrips!(
     OpenSyn,
     OpenAck
 );
+
+#[test]
+fn scout_roundtrip() {
+    let msg = Scout { what: 0x02 };
+    let mut buf = [0u8; 256];
+    let mut w = &mut buf[..];
+    <Scout as crate::ZEncode>::z_encode(&msg, &mut w).unwrap();
+    let len = <Scout as crate::ZLen>::z_len(&msg);
+    let decoded = <Scout as crate::ZDecode>::z_decode(&mut &buf[..len]).unwrap();
+    assert_eq!(msg, decoded);
+
+    let msg = Scout { what: 0x01 };
+    let mut buf = [0u8; 256];
+    let mut w = &mut buf[..];
+    <Scout as crate::ZEncode>::z_encode(&msg, &mut w).unwrap();
+    let len = <Scout as crate::ZLen>::z_len(&msg);
+    let decoded = <Scout as crate::ZDecode>::z_decode(&mut &buf[..len]).unwrap();
+    assert_eq!(msg, decoded);
+}
+
+#[test]
+fn hello_roundtrip() {
+    let msg = Hello {
+        version: crate::VERSION,
+        identifier: InitIdentifier { zid: ZenohIdProto::default(), whatami: crate::fields::WhatAmI::Peer },
+        locators: None,
+    };
+    let mut buf = [0u8; 256];
+    let mut w = &mut buf[..];
+    <Hello<'_> as crate::ZEncode>::z_encode(&msg, &mut w).unwrap();
+    let len = <Hello<'_> as crate::ZLen>::z_len(&msg);
+    let decoded = <Hello<'_> as crate::ZDecode>::z_decode(&mut &buf[..len]).unwrap();
+    assert_eq!(msg, decoded);
+
+    let msg = Hello {
+        version: crate::VERSION,
+        identifier: InitIdentifier { zid: ZenohIdProto::default(), whatami: crate::fields::WhatAmI::Client },
+        locators: Some("tcp/127.0.0.1:7447"),
+    };
+    let mut buf = [0u8; 256];
+    let mut w = &mut buf[..];
+    <Hello<'_> as crate::ZEncode>::z_encode(&msg, &mut w).unwrap();
+    let len = <Hello<'_> as crate::ZLen>::z_len(&msg);
+    let decoded = <Hello<'_> as crate::ZDecode>::z_decode(&mut &buf[..len]).unwrap();
+    assert_eq!(msg, decoded);
+}

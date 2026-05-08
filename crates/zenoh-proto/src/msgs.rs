@@ -7,6 +7,7 @@ mod query;
 mod reply;
 
 mod declare;
+mod discovery;
 mod interest;
 mod push;
 mod request;
@@ -24,6 +25,7 @@ pub use query::*;
 pub use reply::*;
 
 pub use declare::*;
+pub use discovery::*;
 pub use interest::*;
 pub use push::*;
 pub use request::*;
@@ -153,6 +155,8 @@ pub struct NetworkMessageRef<'a> {
 
 #[derive(ZEnum, Debug, PartialEq)]
 pub enum TransportMessage<'a> {
+    Scout(Scout),
+    Hello(Hello<'a>),
     Close(Close),
     InitSyn(InitSyn<'a>),
     InitAck(InitAck<'a>),
@@ -164,6 +168,8 @@ pub enum TransportMessage<'a> {
 impl TransportMessage<'_> {
     pub fn as_ref(&self) -> TransportMessageRef<'_> {
         match self {
+            TransportMessage::Scout(x) => TransportMessageRef::Scout(x),
+            TransportMessage::Hello(x) => TransportMessageRef::Hello(x),
             TransportMessage::Close(x) => TransportMessageRef::Close(x),
             TransportMessage::InitSyn(x) => TransportMessageRef::InitSyn(x),
             TransportMessage::InitAck(x) => TransportMessageRef::InitAck(x),
@@ -176,6 +182,8 @@ impl TransportMessage<'_> {
 
 #[derive(Debug, PartialEq)]
 pub enum TransportMessageRef<'a> {
+    Scout(&'a Scout),
+    Hello(&'a Hello<'a>),
     Close(&'a Close),
     InitSyn(&'a InitSyn<'a>),
     InitAck(&'a InitAck<'a>),
@@ -187,6 +195,8 @@ pub enum TransportMessageRef<'a> {
 impl<'a> crate::ZBodyLen for TransportMessageRef<'a> {
     fn z_body_len(&self) -> usize {
         match self {
+            Self::Scout(x) => <Scout as crate::ZBodyLen>::z_body_len(x),
+            Self::Hello(x) => <Hello as crate::ZBodyLen>::z_body_len(x),
             Self::Close(x) => <Close as crate::ZBodyLen>::z_body_len(x),
             Self::InitSyn(x) => <InitSyn as crate::ZBodyLen>::z_body_len(x),
             Self::InitAck(x) => <InitAck as crate::ZBodyLen>::z_body_len(x),
@@ -209,6 +219,8 @@ impl<'a> crate::ZBodyEncode for TransportMessageRef<'a> {
         w: &mut impl crate::ZWriteable,
     ) -> core::result::Result<(), crate::CodecError> {
         match self {
+            Self::Scout(x) => <Scout as crate::ZBodyEncode>::z_body_encode(x, w),
+            Self::Hello(x) => <Hello as crate::ZBodyEncode>::z_body_encode(x, w),
             Self::Close(x) => <Close as crate::ZBodyEncode>::z_body_encode(x, w),
             Self::InitSyn(x) => <InitSyn as crate::ZBodyEncode>::z_body_encode(x, w),
             Self::InitAck(x) => <InitAck as crate::ZBodyEncode>::z_body_encode(x, w),
@@ -225,6 +237,8 @@ impl<'a> crate::ZEncode for TransportMessageRef<'a> {
         w: &mut impl crate::ZWriteable,
     ) -> core::result::Result<(), crate::CodecError> {
         match self {
+            Self::Scout(x) => <Scout as crate::ZEncode>::z_encode(x, w),
+            Self::Hello(x) => <Hello as crate::ZEncode>::z_encode(x, w),
             Self::Close(x) => <Close as crate::ZEncode>::z_encode(x, w),
             Self::InitSyn(x) => <InitSyn as crate::ZEncode>::z_encode(x, w),
             Self::InitAck(x) => <InitAck as crate::ZEncode>::z_encode(x, w),
