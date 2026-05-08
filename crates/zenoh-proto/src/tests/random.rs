@@ -1101,7 +1101,7 @@ impl<'a> Hello<'a> {
         let locators = if rand::thread_rng().gen_bool(0.5) {
             let len = rand::thread_rng().gen_range(1usize..16);
             let s = Alphanumeric.sample_string(&mut rand::thread_rng(), len);
-            Some(unsafe { w.store_str(s.as_str()).unwrap() })
+            Some(unsafe { w.store_str(s.as_str()).expect("test buffer too small for locator string") })
         } else {
             None
         };

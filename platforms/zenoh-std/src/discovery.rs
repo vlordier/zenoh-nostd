@@ -53,7 +53,9 @@ pub async fn scout(endpoint: &str, what: u8) -> Result<Vec<DiscNode>, String> {
         .await
         .map_err(|e| format!("send SCOUT: {e}"))?;
 
-    // Try to receive a HELLO response within the timeout
+    // Try to receive a HELLO response within the timeout.
+    // `future::or` drops the losing branch when the winning branch completes,
+    // which properly cancels the `recv_from` future via async-io's drop mechanism.
     let mut nodes = Vec::new();
     let mut recv_buf = [0u8; 1024];
 
