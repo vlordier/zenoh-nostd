@@ -7,6 +7,7 @@ use wtx::{
 };
 use zenoh_nostd::platform::*;
 
+mod mcast;
 mod tcp;
 mod udp;
 mod ws;
@@ -20,6 +21,7 @@ pub enum StdLink {
     Tcp(tcp::StdTcpLink),
     Udp(udp::StdUdpLink),
     Ws(ws::StdWsLink),
+    Mcast(mcast::McLink),
 }
 
 #[derive(ZLinkInfo, ZLinkTx)]
@@ -27,6 +29,7 @@ pub enum StdLinkTx<'link> {
     Tcp(tcp::StdTcpLinkTx),
     Udp(udp::StdUdpLinkTx),
     Ws(ws::StdWsLinkTx<'link>),
+    Mcast(mcast::McLinkTx),
 }
 
 #[derive(ZLinkInfo, ZLinkRx)]
@@ -34,6 +37,7 @@ pub enum StdLinkRx<'link> {
     Tcp(tcp::StdTcpLinkRx),
     Udp(udp::StdUdpLinkRx),
     Ws(ws::StdWsLinkRx<'link>),
+    Mcast(mcast::McLinkRx),
 }
 
 impl ZLinkManager for StdLinkManager {
@@ -153,6 +157,16 @@ impl ZLinkManager for StdLinkManager {
 
                 Ok(Self::Link::Ws(ws::StdWsLink::new(reader, writer, mtu)))
             }
+            "mcast" => {
+                let addr = SocketAddr::try_from(address)?;
+                let bind_addr = SocketAddr::new(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                    addr.port(),
+                );
+                Ok(Self::Link::Mcast(
+                    mcast::McLink::new(addr, bind_addr).await?,
+                ))
+            }
             _ => zenoh::zbail!(LinkError::CouldNotParseProtocol),
         }
     }
@@ -225,6 +239,16 @@ impl ZLinkManager for StdLinkManager {
                     .map_err(|_| LinkError::CouldNotConnect)?;
 
                 Ok(Self::Link::Udp(udp::StdUdpLink::new(socket, 8192)))
+            }
+            "mcast" => {
+                let addr = SocketAddr::try_from(address)?;
+                let bind_addr = SocketAddr::new(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                    addr.port(),
+                );
+                Ok(Self::Link::Mcast(
+                    mcast::McLink::new(addr, bind_addr).await?,
+                ))
             }
             _ => zenoh::zbail!(LinkError::CouldNotParseProtocol),
         }
