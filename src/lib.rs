@@ -84,6 +84,11 @@ impl ExampleConfig {
         self.transports = transports;
         self
     }
+
+    pub fn with_whatami(mut self, whatami: WhatAmI) -> Self {
+        self.transports = self.transports.with_whatami(whatami);
+        self
+    }
 }
 
 #[cfg(feature = "alloc")]

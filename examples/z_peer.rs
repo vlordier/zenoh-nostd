@@ -19,10 +19,7 @@ async fn entry(spawner: embassy_executor::Spawner) -> zenoh::ZResult<()> {
     zenoh::info!("zenoh-nostd z_peer example");
 
     let config = init_session_example(&spawner).await
-        .with_transports(
-            TransportLinkManager::from(LinkManager)
-                .with_whatami(WhatAmI::Peer),
-        );
+        .with_whatami(WhatAmI::Peer);
 
     let session = if LISTEN {
         zenoh::listen!(ExampleConfig: config, Endpoint::try_from(ENDPOINT)?)
