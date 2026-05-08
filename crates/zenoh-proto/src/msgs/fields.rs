@@ -14,8 +14,15 @@ pub enum Reliability {
 #[repr(u8)]
 #[derive(Debug, Default, PartialEq)]
 pub enum Priority {
+    Control = 0,
+    RealTime = 1,
+    InteractiveHigh = 2,
+    InteractiveLow = 3,
+    DataHigh = 4,
     #[default]
     Data = 5,
+    DataLow = 6,
+    Background = 7,
 }
 
 #[derive(Debug, Default, PartialEq)]
