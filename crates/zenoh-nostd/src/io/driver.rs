@@ -80,7 +80,7 @@ where
                     let tx = tx_guard.deref_mut();
 
                     if tx.transport().should_close(start.elapsed().into()) {
-                        // TODO: send Close msg
+                        tx.close().await.map_err(EitherError::A)?;
                         break Err(EitherError::A(TransportLinkError::TransportClosed));
                     }
 
@@ -106,7 +106,8 @@ where
             }
 
             if rx.transport().should_close(start.elapsed().into()) {
-                // TODO: Try send Close msg
+                let mut tx_guard = self.tx.lock().await;
+                tx_guard.deref_mut().close().await.map_err(EitherError::A)?;
                 break Err(EitherError::A(TransportLinkError::TransportClosed));
             }
         }
