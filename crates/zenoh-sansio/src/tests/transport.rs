@@ -366,7 +366,7 @@ fn transport_builder_peer_initsyn_has_peer_whatami() {
 }
 
 #[test]
-fn transport_peer_simultaneous_connect_equal_zid_errors() {
+fn transport_peer_simultaneous_connect_equal_zid_no_response() {
     let zid = ZenohIdProto::default();
 
     let mut a = State::WaitingInitAck {
